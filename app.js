@@ -26,9 +26,107 @@ let currentCustomerId = null;
 let currentPocId = null;
 let modalCallback = null;
 let isLoading = true;
+let isAdmin = sessionStorage.getItem('isAdmin') === 'true';
+
+// ---------- Admin Password Management ----------
+function toggleAdminMode() {
+    if (isAdmin) {
+        isAdmin = false;
+        sessionStorage.removeItem('isAdmin');
+        updateAdminUI();
+        toast('Admin mode deactivated.', 'info');
+    } else {
+        openModal('Admin Authentication', `
+            <div class="form-group">
+                <label>Enter Admin Password</label>
+                <input type="password" id="adminPasswordInput" placeholder="Password" autofocus>
+                <p style="font-size:12px; color:var(--gray-500); margin-top:6px;">
+                    Unlocks Import Test Cases, Add POC/Test Cases, and Delete options.
+                </p>
+            </div>
+        `, () => {
+            const input = document.getElementById('adminPasswordInput');
+            if (input && input.value === 'Pa$$word') {
+                isAdmin = true;
+                sessionStorage.setItem('isAdmin', 'true');
+                updateAdminUI();
+                toast('Admin mode activated! Tools unlocked.', 'success');
+                return true;
+            } else {
+                toast('Incorrect password! Access denied.', 'error');
+                return false;
+            }
+        });
+    }
+}
+
+function updateAdminUI() {
+    const adminControls = document.getElementById('adminControls');
+    const adminToggleBtn = document.getElementById('adminToggleBtn');
+    const adminToggleIcon = document.getElementById('adminToggleIcon');
+    const adminToggleText = document.getElementById('adminToggleText');
+    const sidebarAddCustBtn = document.getElementById('sidebarAddCustBtn');
+    const customerAdminActions = document.getElementById('customerAdminActions');
+    const pocAdminActions = document.getElementById('pocAdminActions');
+
+    if (adminControls) adminControls.style.display = isAdmin ? 'flex' : 'none';
+    if (sidebarAddCustBtn) sidebarAddCustBtn.style.display = isAdmin ? 'inline-flex' : 'none';
+    if (customerAdminActions) customerAdminActions.style.display = isAdmin ? 'flex' : 'none';
+    if (pocAdminActions) pocAdminActions.style.display = isAdmin ? 'flex' : 'none';
+
+    if (adminToggleBtn) {
+        if (isAdmin) {
+            // Green when active
+            adminToggleBtn.className = 'btn btn-success';
+            adminToggleBtn.title = 'Admin Active (Click to deactivate)';
+            if (adminToggleIcon) adminToggleIcon.className = 'fas fa-lock-open';
+            if (adminToggleText) adminToggleText.textContent = 'Admin Active';
+        } else {
+            // Normal color when inactive
+            adminToggleBtn.className = 'btn btn-outline';
+            adminToggleBtn.title = 'Click to activate Admin Mode';
+            if (adminToggleIcon) adminToggleIcon.className = 'fas fa-lock';
+            if (adminToggleText) adminToggleText.textContent = 'Admin';
+        }
+    }
+
+    // Re-render table if in POC view to toggle Actions column & delete buttons
+    if (currentPocId && currentCustomerId) {
+        renderTestCases();
+    }
+}
 
 // ---------- Init ----------
 document.addEventListener('DOMContentLoaded', () => {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('demo') === '1' || urlParams.get('demo') === '2') {
+        db = {
+            customers: [{
+                id: 'c1',
+                name: 'Acme Corp',
+                pocs: [{
+                    id: 'p1',
+                    name: 'Login Module POC',
+                    testCases: [
+                        { id: 't1', testNo: 1, module: 'Authentication', scenario: 'Login with valid credentials', execStep: '1. Open app\n2. Enter valid username\n3. Enter valid password\n4. Click Login', expectedBehavior: 'User should be redirected to dashboard', actualBehavior: 'User redirected to dashboard', comment: 'Verified on Chrome v120', status: 'Pass' },
+                        { id: 't2', testNo: 2, module: 'Authentication', scenario: 'Login with invalid password', execStep: '1. Open app\n2. Enter valid username\n3. Enter wrong password\n4. Click Login', expectedBehavior: 'Error message: Invalid credentials', actualBehavior: 'Shows error alert', comment: '', status: 'Pass' },
+                        { id: 't3', testNo: 3, module: 'Authentication', scenario: 'Forgot password flow', execStep: '1. Click Forgot Password\n2. Enter registered email\n3. Click Submit', expectedBehavior: 'Password reset email should be sent', actualBehavior: '', comment: '', status: 'In Progress' },
+                        { id: 't4', testNo: 4, module: 'Authentication', scenario: 'Session timeout after 30 min', execStep: '1. Login successfully\n2. Wait 30 minutes idle\n3. Try to navigate', expectedBehavior: 'User should be redirected to login page', actualBehavior: 'Token refreshed instead', comment: 'Check session timeout config', status: 'Fail' }
+                    ]
+                }]
+            }]
+        };
+        isLoading = false;
+        isAdmin = urlParams.get('admin') === '1';
+        renderSidebar();
+        if (urlParams.get('demo') === '2') {
+            showDashboard();
+        } else {
+            showPoc('c1', 'p1');
+        }
+        updateAdminUI();
+        return;
+    }
     loadDataFromCloud();
 });
 
@@ -106,6 +204,7 @@ function showDashboard() {
     showView('dashboardView');
     renderDashboard();
     highlightActiveNav();
+    updateAdminUI();
 }
 
 function showCustomer(customerId) {
@@ -117,6 +216,7 @@ function showCustomer(customerId) {
     showView('customerView');
     renderPocGrid();
     highlightActiveNav();
+    updateAdminUI();
 }
 
 function showPoc(customerId, pocId) {
@@ -130,6 +230,7 @@ function showPoc(customerId, pocId) {
     populateModuleFilter();
     renderTestCases();
     highlightActiveNav();
+    updateAdminUI();
 }
 
 function highlightActiveNav() {
@@ -298,8 +399,25 @@ function renderTestCases() {
     });
 
     const tbody = document.getElementById('testCaseBody');
+    const thead = document.getElementById('testCaseHead');
     const emptyMsg = document.getElementById('emptyTestCases');
     const table = document.getElementById('testCaseTable');
+
+    if (thead) {
+        thead.innerHTML = `
+            <tr>
+                <th class="col-no">#</th>
+                <th class="col-module">Module</th>
+                <th class="col-scenario">Scenario</th>
+                <th class="col-step">Execution Step</th>
+                <th class="col-expected">Expected Behavior</th>
+                <th class="col-actual">Actual Behavior</th>
+                <th class="col-comment">Comment</th>
+                <th class="col-status">Status</th>
+                ${isAdmin ? '<th class="col-actions">Actions</th>' : ''}
+            </tr>
+        `;
+    }
 
     if (filtered.length === 0) {
         tbody.innerHTML = '';
@@ -328,11 +446,12 @@ function renderTestCases() {
                         <option value="Blocked" ${tc.status === 'Blocked' ? 'selected' : ''}>Blocked</option>
                     </select>
                 </td>
+                ${isAdmin ? `
                 <td class="col-actions">
                     <div class="row-actions">
                         <button title="Delete Test Case" onclick="deleteTestCase('${tc.id}')"><i class="fas fa-trash"></i></button>
                     </div>
-                </td>
+                </td>` : ''}
             </tr>`;
         }).join('');
     }
@@ -397,6 +516,10 @@ function onStatusChange(el) {
 // DEDICATED SEPARATE ADMIN IMPORT MENU (Upload Excel)
 // ============================================================
 function showAdminUploadModal() {
+    if (!isAdmin) {
+        toggleAdminMode();
+        return;
+    }
     const customerOptions = db.customers.map(c => `
         <option value="${c.id}" ${c.id === currentCustomerId ? 'selected' : ''}>${escHtml(c.name)}</option>
     `).join('');
@@ -624,6 +747,7 @@ function showAddCustomerModal() {
 }
 
 function deleteCurrentCustomer() {
+    if (!isAdmin) { toggleAdminMode(); return; }
     if (!currentCustomerId) return;
     const c = getCustomer(currentCustomerId);
     if (!confirm(`Delete customer "${c.name}" and ALL its POCs & test cases?`)) return;
@@ -654,6 +778,7 @@ function showAddPocModal() {
 }
 
 function deleteCurrentPoc() {
+    if (!isAdmin) { toggleAdminMode(); return; }
     if (!currentPocId) return;
     const poc = getPoc(currentCustomerId, currentPocId);
     if (!confirm(`Delete POC "${poc.name}" and all its test cases?`)) return;
@@ -705,6 +830,7 @@ function showAddTestCaseModal() {
 }
 
 function deleteTestCase(tcId) {
+    if (!isAdmin) { toggleAdminMode(); return; }
     const poc = getPoc(currentCustomerId, currentPocId);
     if (!poc) return;
     poc.testCases = poc.testCases.filter(t => t.id !== tcId);
