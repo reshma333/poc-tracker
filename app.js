@@ -27,6 +27,82 @@ let currentPocId = null;
 let modalCallback = null;
 let isLoading = true;
 let isAdmin = sessionStorage.getItem('isAdmin') === 'true';
+let activeCustomerKey = null;
+
+// ---------- Multi-Tenancy & Privacy (Customer Isolation) ----------
+function detectCustomerFromURL() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const key = urlParams.get('c') || urlParams.get('customer') || urlParams.get('client');
+    if (key) {
+        activeCustomerKey = key.trim();
+    }
+}
+
+function ensureCustomerAccessKeys() {
+    let changed = false;
+    db.customers.forEach(c => {
+        if (!c.accessKey) {
+            const slug = (c.name || 'client').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'client';
+            c.accessKey = slug + '_' + Math.random().toString(36).substring(2, 7);
+            changed = true;
+        }
+    });
+    if (changed) {
+        saveData();
+    }
+}
+
+function getVisibleCustomers() {
+    if (isAdmin) {
+        return db.customers;
+    }
+    if (activeCustomerKey) {
+        return db.customers.filter(c => c.accessKey === activeCustomerKey || c.id === activeCustomerKey);
+    }
+    return [];
+}
+
+function getShareableLink(customer) {
+    const base = window.location.origin + window.location.pathname;
+    return `${base}?c=${customer.accessKey}`;
+}
+
+function copyCustomerLink(customerId) {
+    const cust = getCustomer(customerId);
+    if (!cust) return;
+    const link = getShareableLink(cust);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(link).then(() => {
+            toast(`Private link copied for ${cust.name}! Competitors cannot see this.`, 'success');
+        }).catch(() => {
+            prompt('Copy this customer link:', link);
+        });
+    } else {
+        prompt('Copy this customer link:', link);
+    }
+}
+
+function copyCurrentCustomerLink() {
+    if (currentCustomerId) {
+        copyCustomerLink(currentCustomerId);
+    }
+}
+
+function submitAccessCode() {
+    const input = document.getElementById('manualAccessCodeInput');
+    if (!input || !input.value.trim()) return;
+    const code = input.value.trim();
+    const found = db.customers.find(c => c.accessKey === code || c.id === code);
+    if (found) {
+        activeCustomerKey = found.accessKey;
+        const newUrl = window.location.pathname + '?c=' + found.accessKey;
+        window.history.pushState({}, '', newUrl);
+        refreshCurrentView();
+        toast(`Welcome, ${found.name}!`, 'success');
+    } else {
+        toast('Invalid access code. Please check and try again.', 'error');
+    }
+}
 
 // ---------- Admin Password Management ----------
 function toggleAdminMode() {
@@ -98,12 +174,14 @@ function updateAdminUI() {
 
 // ---------- Init ----------
 document.addEventListener('DOMContentLoaded', () => {
+    detectCustomerFromURL();
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('demo') === '1' || urlParams.get('demo') === '2') {
         db = {
             customers: [{
                 id: 'c1',
                 name: 'Acme Corp',
+                accessKey: 'acme-corp_8x2a1',
                 pocs: [{
                     id: 'p1',
                     name: 'Login Module POC',
@@ -114,6 +192,15 @@ document.addEventListener('DOMContentLoaded', () => {
                         { id: 't4', testNo: 4, module: 'Authentication', scenario: 'Session timeout after 30 min', execStep: '1. Login successfully\n2. Wait 30 minutes idle\n3. Try to navigate', expectedBehavior: 'User should be redirected to login page', actualBehavior: 'Token refreshed instead', comment: 'Check session timeout config', status: 'Fail' }
                     ]
                 }]
+            }, {
+                id: 'c2',
+                name: 'Stark Industries',
+                accessKey: 'stark-ind_9z7c3',
+                pocs: [{
+                    id: 'p2',
+                    name: 'Security POC',
+                    testCases: []
+                }]
             }]
         };
         isLoading = false;
@@ -122,7 +209,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (urlParams.get('demo') === '2') {
             showDashboard();
         } else {
-            showPoc('c1', 'p1');
+            showCustomer('c1');
         }
         updateAdminUI();
         return;
@@ -169,6 +256,35 @@ function saveData() {
 }
 
 function refreshCurrentView() {
+    ensureCustomerAccessKeys();
+
+    if (!isAdmin && !activeCustomerKey) {
+        // Visitor is not Admin and has no client link: show secure portal landing
+        showView('portalLandingView');
+        renderSidebar();
+        return;
+    }
+
+    if (!isAdmin && activeCustomerKey) {
+        // Customer viewing their private space
+        const visible = getVisibleCustomers();
+        if (visible.length === 0) {
+            toast('Invalid or expired customer access link.', 'error');
+            showView('portalLandingView');
+            renderSidebar();
+            return;
+        }
+        renderSidebar();
+        const myCust = visible[0];
+        if (currentPocId && currentCustomerId === myCust.id) {
+            showPoc(myCust.id, currentPocId);
+        } else {
+            showCustomer(myCust.id);
+        }
+        return;
+    }
+
+    // Admin view
     renderSidebar();
     if (currentPocId && currentCustomerId) {
         const poc = getPoc(currentCustomerId, currentPocId);
@@ -199,6 +315,19 @@ function showView(viewId) {
 }
 
 function showDashboard() {
+    if (!isAdmin && !activeCustomerKey) {
+        showView('portalLandingView');
+        highlightActiveNav();
+        updateAdminUI();
+        return;
+    }
+    if (!isAdmin && activeCustomerKey) {
+        const visible = getVisibleCustomers();
+        if (visible.length > 0) {
+            showCustomer(visible[0].id);
+            return;
+        }
+    }
     currentCustomerId = null;
     currentPocId = null;
     showView('dashboardView');
@@ -208,11 +337,28 @@ function showDashboard() {
 }
 
 function showCustomer(customerId) {
+    const visible = getVisibleCustomers();
+    const customer = visible.find(c => c.id === customerId);
+    if (!customer) {
+        showDashboard();
+        return;
+    }
     currentCustomerId = customerId;
     currentPocId = null;
-    const customer = getCustomer(customerId);
-    if (!customer) return;
     document.getElementById('customerTitle').textContent = customer.name;
+
+    // Show/hide Link Bar for Admin
+    const linkBar = document.getElementById('customerLinkBar');
+    const linkText = document.getElementById('customerLinkText');
+    if (linkBar && linkText) {
+        if (isAdmin) {
+            linkText.textContent = getShareableLink(customer);
+            linkBar.style.display = 'flex';
+        } else {
+            linkBar.style.display = 'none';
+        }
+    }
+
     showView('customerView');
     renderPocGrid();
     highlightActiveNav();
@@ -266,11 +412,12 @@ function getTestCaseStats(testCases) {
 // ============================================================
 function renderSidebar() {
     const list = document.getElementById('customerList');
-    if (db.customers.length === 0) {
-        list.innerHTML = '<p style="padding:16px;color:var(--gray-400);font-size:13px;text-align:center;">No customers yet</p>';
+    const visible = getVisibleCustomers();
+    if (visible.length === 0) {
+        list.innerHTML = '<p style="padding:16px;color:var(--gray-400);font-size:13px;text-align:center;">No customers available</p>';
         return;
     }
-    list.innerHTML = db.customers.map(c => `
+    list.innerHTML = visible.map(c => `
         <div class="customer-item">
             <button class="customer-btn ${c.id === currentCustomerId ? 'active' : ''}" 
                     data-id="${c.id}" onclick="showCustomer('${c.id}')">
@@ -324,7 +471,10 @@ function renderDashboard() {
                 <div class="customer-overview-card">
                     <div class="cust-card-header">
                         <h4 onclick="showCustomer('${c.id}')"><i class="fas fa-building" style="color:var(--primary);margin-right:8px;"></i>${escHtml(c.name)}</h4>
-                        <span class="badge badge-gray">${c.pocs.length} POC${c.pocs.length !== 1 ? 's' : ''}</span>
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                            <span class="badge badge-gray">${c.pocs.length} POC${c.pocs.length !== 1 ? 's' : ''}</span>
+                            ${isAdmin ? `<button class="btn btn-outline btn-sm" onclick="event.stopPropagation(); copyCustomerLink('${c.id}')" title="Copy private customer link for ${escHtml(c.name)}"><i class="fas fa-link"></i> Link</button>` : ''}
+                        </div>
                     </div>
                     <div class="poc-tag-list">
                         ${c.pocs.length === 0 ? '<p style="font-size:12px;color:var(--gray-400);">No POCs yet.</p>' : 
@@ -737,12 +887,14 @@ function showAddCustomerModal() {
     `, () => {
         const name = document.getElementById('modalInput1').value.trim();
         if (!name) { toast('Please enter a name', 'error'); return false; }
-        const newCust = { id: genId(), name, pocs: [] };
+        const slug = (name || 'client').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'client';
+        const accessKey = slug + '_' + Math.random().toString(36).substring(2, 7);
+        const newCust = { id: genId(), name, accessKey, pocs: [] };
         db.customers.push(newCust);
         saveData();
         renderSidebar();
         showCustomer(newCust.id);
-        toast(`Customer "${name}" added!`, 'success');
+        toast(`Customer "${name}" created! Link ready to share.`, 'success');
     });
 }
 
