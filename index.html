@@ -14,15 +14,19 @@
 <body>
     <!-- Header -->
     <header class="header">
-        <div class="header-left">
+        <div class="header-left" onclick="showDashboard()" style="cursor: pointer;" title="Back to Dashboard">
             <i class="fas fa-vial header-icon"></i>
             <h1>POC Test Tracker</h1>
         </div>
         <div class="header-right">
-            <button class="btn btn-outline" onclick="exportAllDataJSON()" title="Backup all data">
+            <!-- Dedicated Admin Import Menu (Separate from Customer Pages) -->
+            <button class="btn btn-header-accent" onclick="showAdminUploadModal()" title="Upload Excel to a Customer">
+                <i class="fas fa-cloud-arrow-up"></i> Import Test Cases
+            </button>
+            <button class="btn btn-outline" onclick="exportAllDataJSON()" title="Backup all data to JSON">
                 <i class="fas fa-download"></i> Backup
             </button>
-            <label class="btn btn-outline" title="Restore from backup">
+            <label class="btn btn-outline" title="Restore from JSON backup">
                 <i class="fas fa-upload"></i> Restore
                 <input type="file" accept=".json" onchange="importAllDataJSON(event)" hidden>
             </label>
@@ -32,9 +36,17 @@
     <div class="layout">
         <!-- Sidebar -->
         <aside class="sidebar" id="sidebar">
+            <!-- Dashboard Main Nav Tab -->
+            <div class="sidebar-nav">
+                <button class="sidebar-nav-btn active" id="navDashboardBtn" onclick="showDashboard()">
+                    <i class="fas fa-chart-pie"></i>
+                    <span>Dashboard</span>
+                </button>
+            </div>
+
             <div class="sidebar-header">
                 <h2>Customers</h2>
-                <button class="btn btn-sm btn-primary" onclick="showAddCustomerModal()">
+                <button class="btn btn-sm btn-primary" onclick="showAddCustomerModal()" title="Add Customer">
                     <i class="fas fa-plus"></i> Add
                 </button>
             </div>
@@ -49,61 +61,64 @@
             <div id="dashboardView" class="view active">
                 <div class="welcome">
                     <i class="fas fa-chart-line welcome-icon"></i>
-                    <h2>Welcome to POC Test Tracker</h2>
-                    <p>Select a customer from the sidebar or add a new one to get started.</p>
+                    <h2>POC Test Tracker Dashboard</h2>
+                    <p>Overview of all active customer POCs and test execution progress.</p>
                     <div class="stats-grid" id="dashboardStats"></div>
+                </div>
+
+                <div class="dashboard-sections">
+                    <div class="dashboard-section-header">
+                        <h3><i class="fas fa-building"></i> Customer POC Overviews</h3>
+                        <p>Click any customer or POC to navigate directly to its test cases.</p>
+                    </div>
+                    <div class="customer-overview-grid" id="dashboardCustomerGrid">
+                        <!-- Dynamically populated with customer & POC cards -->
+                    </div>
                 </div>
             </div>
 
-            <!-- Customer View -->
+            <!-- Customer View (Customer Facing: Clean & Free of Internal Uploads) -->
             <div id="customerView" class="view">
                 <div class="view-header">
                     <div>
                         <button class="btn btn-ghost btn-sm" onclick="showDashboard()">
-                            <i class="fas fa-arrow-left"></i> Back
+                            <i class="fas fa-arrow-left"></i> Dashboard
                         </button>
                         <h2 id="customerTitle" class="inline-title"></h2>
                     </div>
                     <div class="view-actions">
-                        <label class="btn btn-success">
-                            <i class="fas fa-file-excel"></i> Upload Excel
-                            <input type="file" accept=".xlsx,.xls,.csv" onchange="handleCustomerExcelUpload(event)" hidden>
-                        </label>
                         <button class="btn btn-primary" onclick="showAddPocModal()">
                             <i class="fas fa-plus"></i> Add POC
                         </button>
-                        <button class="btn btn-danger btn-sm" onclick="deleteCurrentCustomer()">
+                        <button class="btn btn-danger btn-sm" onclick="deleteCurrentCustomer()" title="Delete Customer">
                             <i class="fas fa-trash"></i>
                         </button>
                     </div>
                 </div>
                 <div class="poc-grid" id="pocGrid">
-                    <!-- Dynamically populated -->
+                    <!-- Dynamically populated with POC cards -->
                 </div>
             </div>
 
-            <!-- POC / Test Cases View -->
+            <!-- POC / Test Cases Execution View (Export Excel is Publicly Visible Here) -->
             <div id="pocView" class="view">
                 <div class="view-header">
                     <div>
                         <button class="btn btn-ghost btn-sm" onclick="showCustomer(currentCustomerId)">
-                            <i class="fas fa-arrow-left"></i> Back
+                            <i class="fas fa-arrow-left"></i> POCs
                         </button>
                         <h2 id="pocTitle" class="inline-title"></h2>
                         <span class="badge" id="pocBadge"></span>
                     </div>
                     <div class="view-actions">
-                        <label class="btn btn-success">
-                            <i class="fas fa-file-excel"></i> Upload Excel
-                            <input type="file" accept=".xlsx,.xls,.csv" onchange="handleExcelUpload(event)" hidden>
-                        </label>
-                        <button class="btn btn-outline" onclick="exportPocToExcel()">
-                            <i class="fas fa-download"></i> Export Excel
+                        <!-- Export is fully visible to anyone executing or reviewing test cases -->
+                        <button class="btn btn-success" onclick="exportPocToExcel()" title="Export test results to Excel file">
+                            <i class="fas fa-file-excel"></i> Export Excel
                         </button>
                         <button class="btn btn-primary" onclick="showAddTestCaseModal()">
                             <i class="fas fa-plus"></i> Add Test Case
                         </button>
-                        <button class="btn btn-danger btn-sm" onclick="deleteCurrentPoc()">
+                        <button class="btn btn-danger btn-sm" onclick="deleteCurrentPoc()" title="Delete POC">
                             <i class="fas fa-trash"></i>
                         </button>
                     </div>
@@ -112,7 +127,7 @@
                 <!-- Filters -->
                 <div class="filters-bar">
                     <div class="filter-group">
-                        <label>Filter by Status:</label>
+                        <label>Status:</label>
                         <select id="statusFilter" onchange="renderTestCases()">
                             <option value="all">All</option>
                             <option value="Pass">Pass</option>
@@ -123,7 +138,7 @@
                         </select>
                     </div>
                     <div class="filter-group">
-                        <label>Filter by Module:</label>
+                        <label>Module:</label>
                         <select id="moduleFilter" onchange="renderTestCases()">
                             <option value="all">All</option>
                         </select>
@@ -134,7 +149,7 @@
                     <div class="stats-mini" id="pocStats"></div>
                 </div>
 
-                <!-- Test Case Table -->
+                <!-- Test Case Execution Table -->
                 <div class="table-container">
                     <table class="test-table" id="testCaseTable">
                         <thead>
@@ -156,7 +171,7 @@
                     </table>
                     <div class="empty-state" id="emptyTestCases" style="display:none;">
                         <i class="fas fa-clipboard-list"></i>
-                        <p>No test cases yet. Add manually or upload an Excel file.</p>
+                        <p>No test cases yet for this POC.</p>
                     </div>
                 </div>
             </div>
@@ -180,7 +195,7 @@
         </div>
     </div>
 
-    <!-- Toast -->
+    <!-- Toast Notification -->
     <div class="toast-container" id="toastContainer"></div>
 
     <script src="app.js"></script>

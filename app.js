@@ -3,7 +3,7 @@
 // ============================================================
 
 // =============================================
-// 🔥 FIREBASE CONFIG — PASTE YOUR CONFIG HERE
+// 🔥 FIREBASE CONFIG
 // =============================================
 const firebaseConfig = {
     apiKey: "AIzaSyBYhQsnq3fLPlLjYNNHuftuZDd3BUAwOYg",
@@ -29,19 +29,8 @@ let isLoading = true;
 
 // ---------- Init ----------
 document.addEventListener('DOMContentLoaded', () => {
-    showLoadingState();
     loadDataFromCloud();
 });
-
-function showLoadingState() {
-    const main = document.getElementById('mainContent');
-    main.innerHTML = `
-        <div class="welcome">
-            <i class="fas fa-spinner fa-spin welcome-icon" style="font-size:48px;color:var(--primary)"></i>
-            <h2>Connecting to database...</h2>
-            <p>Loading your test cases from the cloud</p>
-        </div>`;
-}
 
 // ============================================================
 // DATA PERSISTENCE (Firebase Firestore)
@@ -54,15 +43,14 @@ function loadDataFromCloud() {
             if (!db.customers) db.customers = [];
         } else {
             db = { customers: [] };
-            // Create the document if it doesn't exist
-            DB_DOC.set(db);
+            DB_DOC.set(db).catch(e => console.warn('Init set error:', e));
         }
         isLoading = false;
         refreshCurrentView();
     }, (error) => {
-        console.error('Firebase error:', error);
-        toast('Cloud connection failed. Using local backup.', 'error');
-        // Fallback to localStorage
+        console.error('Firebase snapshot error:', error);
+        toast('Cloud sync notice: ' + error.message, 'error');
+        // Fallback to localStorage if offline
         const stored = localStorage.getItem('pocTestTracker');
         if (stored) {
             try { db = JSON.parse(stored); } catch (e) { db = { customers: [] }; }
@@ -73,129 +61,17 @@ function loadDataFromCloud() {
 }
 
 function saveData() {
-    // Save to cloud
+    // Save to Firestore
     DB_DOC.set(JSON.parse(JSON.stringify(db))).catch(err => {
         console.error('Save error:', err);
-        toast('Error saving to cloud!', 'error');
+        toast('Error saving to cloud! Check Firestore rules.', 'error');
     });
     // Also backup locally
     localStorage.setItem('pocTestTracker', JSON.stringify(db));
 }
 
 function refreshCurrentView() {
-    // Restore the main content structure if it was replaced by loading
-    const main = document.getElementById('mainContent');
-    if (!main.querySelector('#dashboardView')) {
-        main.innerHTML = `
-            <!-- Dashboard (default view) -->
-            <div id="dashboardView" class="view active">
-                <div class="welcome">
-                    <i class="fas fa-chart-line welcome-icon"></i>
-                    <h2>Welcome to POC Test Tracker</h2>
-                    <p>Select a customer from the sidebar or add a new one to get started.</p>
-                    <div class="stats-grid" id="dashboardStats"></div>
-                </div>
-            </div>
-            <!-- Customer View -->
-            <div id="customerView" class="view">
-                <div class="view-header">
-                    <div>
-                        <button class="btn btn-ghost btn-sm" onclick="showDashboard()">
-                            <i class="fas fa-arrow-left"></i> Back
-                        </button>
-                        <h2 id="customerTitle" class="inline-title"></h2>
-                    </div>
-                    <div class="view-actions">
-                        <label class="btn btn-success">
-                            <i class="fas fa-file-excel"></i> Upload Excel
-                            <input type="file" accept=".xlsx,.xls,.csv" onchange="handleCustomerExcelUpload(event)" hidden>
-                        </label>
-                        <button class="btn btn-primary" onclick="showAddPocModal()">
-                            <i class="fas fa-plus"></i> Add POC
-                        </button>
-                        <button class="btn btn-danger btn-sm" onclick="deleteCurrentCustomer()">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </div>
-                </div>
-                <div class="poc-grid" id="pocGrid"></div>
-            </div>
-            <!-- POC / Test Cases View -->
-            <div id="pocView" class="view">
-                <div class="view-header">
-                    <div>
-                        <button class="btn btn-ghost btn-sm" onclick="showCustomer(currentCustomerId)">
-                            <i class="fas fa-arrow-left"></i> Back
-                        </button>
-                        <h2 id="pocTitle" class="inline-title"></h2>
-                        <span class="badge" id="pocBadge"></span>
-                    </div>
-                    <div class="view-actions">
-                        <label class="btn btn-success">
-                            <i class="fas fa-file-excel"></i> Upload Excel
-                            <input type="file" accept=".xlsx,.xls,.csv" onchange="handleExcelUpload(event)" hidden>
-                        </label>
-                        <button class="btn btn-outline" onclick="exportPocToExcel()">
-                            <i class="fas fa-download"></i> Export Excel
-                        </button>
-                        <button class="btn btn-primary" onclick="showAddTestCaseModal()">
-                            <i class="fas fa-plus"></i> Add Test Case
-                        </button>
-                        <button class="btn btn-danger btn-sm" onclick="deleteCurrentPoc()">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </div>
-                </div>
-                <div class="filters-bar">
-                    <div class="filter-group">
-                        <label>Filter by Status:</label>
-                        <select id="statusFilter" onchange="renderTestCases()">
-                            <option value="all">All</option>
-                            <option value="Pass">Pass</option>
-                            <option value="Fail">Fail</option>
-                            <option value="Blocked">Blocked</option>
-                            <option value="In Progress">In Progress</option>
-                            <option value="Not Executed">Not Executed</option>
-                        </select>
-                    </div>
-                    <div class="filter-group">
-                        <label>Filter by Module:</label>
-                        <select id="moduleFilter" onchange="renderTestCases()">
-                            <option value="all">All</option>
-                        </select>
-                    </div>
-                    <div class="filter-group">
-                        <input type="text" id="searchInput" placeholder="Search test cases..." oninput="renderTestCases()">
-                    </div>
-                    <div class="stats-mini" id="pocStats"></div>
-                </div>
-                <div class="table-container">
-                    <table class="test-table" id="testCaseTable">
-                        <thead>
-                            <tr>
-                                <th class="col-no">#</th>
-                                <th class="col-module">Module</th>
-                                <th class="col-scenario">Scenario</th>
-                                <th class="col-step">Execution Step</th>
-                                <th class="col-expected">Expected Behavior</th>
-                                <th class="col-actual">Actual Behavior</th>
-                                <th class="col-comment">Comment</th>
-                                <th class="col-status">Status</th>
-                                <th class="col-actions">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="testCaseBody"></tbody>
-                    </table>
-                    <div class="empty-state" id="emptyTestCases" style="display:none;">
-                        <i class="fas fa-clipboard-list"></i>
-                        <p>No test cases yet. Add manually or upload an Excel file.</p>
-                    </div>
-                </div>
-            </div>`;
-    }
-
     renderSidebar();
-    // Re-render the current view
     if (currentPocId && currentCustomerId) {
         const poc = getPoc(currentCustomerId, currentPocId);
         if (poc) {
@@ -229,7 +105,7 @@ function showDashboard() {
     currentPocId = null;
     showView('dashboardView');
     renderDashboard();
-    highlightActiveCustomer();
+    highlightActiveNav();
 }
 
 function showCustomer(customerId) {
@@ -240,7 +116,7 @@ function showCustomer(customerId) {
     document.getElementById('customerTitle').textContent = customer.name;
     showView('customerView');
     renderPocGrid();
-    highlightActiveCustomer();
+    highlightActiveNav();
 }
 
 function showPoc(customerId, pocId) {
@@ -253,10 +129,14 @@ function showPoc(customerId, pocId) {
     showView('pocView');
     populateModuleFilter();
     renderTestCases();
-    highlightActiveCustomer();
+    highlightActiveNav();
 }
 
-function highlightActiveCustomer() {
+function highlightActiveNav() {
+    const dashBtn = document.getElementById('navDashboardBtn');
+    if (dashBtn) {
+        dashBtn.classList.toggle('active', currentCustomerId === null);
+    }
     document.querySelectorAll('.customer-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.id === currentCustomerId);
     });
@@ -294,7 +174,7 @@ function renderSidebar() {
             <button class="customer-btn ${c.id === currentCustomerId ? 'active' : ''}" 
                     data-id="${c.id}" onclick="showCustomer('${c.id}')">
                 <i class="fas fa-building"></i>
-                ${escHtml(c.name)}
+                <span>${escHtml(c.name)}</span>
                 <span class="count">${c.pocs.length} POC${c.pocs.length !== 1 ? 's' : ''}</span>
             </button>
         </div>
@@ -317,6 +197,7 @@ function renderDashboard() {
             });
         });
     });
+
     const statsEl = document.getElementById('dashboardStats');
     if (statsEl) {
         statsEl.innerHTML = `
@@ -327,16 +208,50 @@ function renderDashboard() {
             <div class="stat-card"><div class="stat-number" style="color:var(--danger)">${totalFail}</div><div class="stat-label">Failed</div></div>
         `;
     }
+
+    // Render Customer & POC Navigation Cards on Dashboard
+    const gridEl = document.getElementById('dashboardCustomerGrid');
+    if (gridEl) {
+        if (db.customers.length === 0) {
+            gridEl.innerHTML = `
+                <div class="empty-state" style="grid-column: 1 / -1;">
+                    <i class="fas fa-building-circle-check"></i>
+                    <p>No customers created yet. Click "+ Add" in sidebar or "Import Test Cases" above.</p>
+                </div>`;
+        } else {
+            gridEl.innerHTML = db.customers.map(c => `
+                <div class="customer-overview-card">
+                    <div class="cust-card-header">
+                        <h4 onclick="showCustomer('${c.id}')"><i class="fas fa-building" style="color:var(--primary);margin-right:8px;"></i>${escHtml(c.name)}</h4>
+                        <span class="badge badge-gray">${c.pocs.length} POC${c.pocs.length !== 1 ? 's' : ''}</span>
+                    </div>
+                    <div class="poc-tag-list">
+                        ${c.pocs.length === 0 ? '<p style="font-size:12px;color:var(--gray-400);">No POCs yet.</p>' : 
+                            c.pocs.map(p => {
+                                const st = getTestCaseStats(p.testCases);
+                                return `
+                                    <div class="poc-tag-item" onclick="showPoc('${c.id}', '${p.id}')" title="Open ${escHtml(p.name)} Test Cases">
+                                        <span><i class="fas fa-flask" style="color:var(--primary);margin-right:6px;"></i>${escHtml(p.name)}</span>
+                                        <span class="badge ${st.Pass > 0 && st.Pass === st.total ? 'badge-pass' : 'badge-info'}">${st.total} tests</span>
+                                    </div>
+                                `;
+                            }).join('')
+                        }
+                    </div>
+                </div>
+            `).join('');
+        }
+    }
 }
 
 // ============================================================
-// RENDER: POC GRID
+// RENDER: POC GRID (Customer View)
 // ============================================================
 function renderPocGrid() {
     const customer = getCustomer(currentCustomerId);
     const grid = document.getElementById('pocGrid');
     if (!customer || customer.pocs.length === 0) {
-        grid.innerHTML = `<div class="empty-state"><i class="fas fa-folder-open"></i><p>No POCs yet. Click "Add POC" or "Upload Excel" to create one.</p></div>`;
+        grid.innerHTML = `<div class="empty-state"><i class="fas fa-folder-open"></i><p>No POCs yet for this customer. Click "Add POC" to create one.</p></div>`;
         return;
     }
     grid.innerHTML = customer.pocs.map(poc => {
@@ -362,7 +277,7 @@ function renderPocGrid() {
 }
 
 // ============================================================
-// RENDER: TEST CASES TABLE
+// RENDER: TEST CASES TABLE (Execution Page)
 // ============================================================
 function renderTestCases() {
     const poc = getPoc(currentCustomerId, currentPocId);
@@ -384,7 +299,7 @@ function renderTestCases() {
 
     const tbody = document.getElementById('testCaseBody');
     const emptyMsg = document.getElementById('emptyTestCases');
-    const table = document.querySelector('.test-table');
+    const table = document.getElementById('testCaseTable');
 
     if (filtered.length === 0) {
         tbody.innerHTML = '';
@@ -415,14 +330,14 @@ function renderTestCases() {
                 </td>
                 <td class="col-actions">
                     <div class="row-actions">
-                        <button title="Delete" onclick="deleteTestCase('${tc.id}')"><i class="fas fa-trash"></i></button>
+                        <button title="Delete Test Case" onclick="deleteTestCase('${tc.id}')"><i class="fas fa-trash"></i></button>
                     </div>
                 </td>
             </tr>`;
         }).join('');
     }
 
-    // Update stats
+    // Stats bar update
     const allStats = getTestCaseStats(poc.testCases);
     const pocStatsEl = document.getElementById('pocStats');
     if (pocStatsEl) {
@@ -479,6 +394,213 @@ function onStatusChange(el) {
 }
 
 // ============================================================
+// DEDICATED SEPARATE ADMIN IMPORT MENU (Upload Excel)
+// ============================================================
+function showAdminUploadModal() {
+    const customerOptions = db.customers.map(c => `
+        <option value="${c.id}" ${c.id === currentCustomerId ? 'selected' : ''}>${escHtml(c.name)}</option>
+    `).join('');
+
+    openModal('Import Test Cases from Excel', `
+        <div class="form-group">
+            <label>Target Customer</label>
+            <select id="importCustomerSelect" onchange="toggleNewCustomerInput(this.value)">
+                ${customerOptions}
+                <option value="__NEW__">+ Create New Customer...</option>
+            </select>
+        </div>
+        <div class="form-group" id="newCustomerGroup" style="${db.customers.length === 0 ? '' : 'display:none;'}">
+            <label>New Customer Name</label>
+            <input type="text" id="importNewCustomerName" placeholder="e.g. Acme Corp">
+        </div>
+        <div class="form-group">
+            <label>Select Excel / CSV File (.xlsx, .xls, .csv)</label>
+            <input type="file" id="importFileInput" accept=".xlsx,.xls,.csv" style="padding: 6px;">
+            <p style="font-size:12px;color:var(--gray-500);margin-top:6px;">
+                💡 <b>Multi-sheet files:</b> Each sheet becomes a POC.<br>
+                💡 <b>Single sheet:</b> Uses POC column or file name as POC.
+            </p>
+        </div>
+    `, () => {
+        const select = document.getElementById('importCustomerSelect');
+        const fileInput = document.getElementById('importFileInput');
+        const file = fileInput.files[0];
+
+        if (!file) {
+            toast('Please choose an Excel file to upload!', 'error');
+            return false;
+        }
+
+        let targetCustomer = null;
+        if (select.value === '__NEW__' || db.customers.length === 0) {
+            const newName = document.getElementById('importNewCustomerName').value.trim();
+            if (!newName) {
+                toast('Please enter a name for the new customer!', 'error');
+                return false;
+            }
+            targetCustomer = { id: genId(), name: newName, pocs: [] };
+            db.customers.push(targetCustomer);
+        } else {
+            targetCustomer = getCustomer(select.value);
+        }
+
+        if (!targetCustomer) {
+            toast('Customer not found', 'error');
+            return false;
+        }
+
+        executeExcelImport(file, targetCustomer);
+        return true;
+    });
+
+    if (db.customers.length === 0) {
+        document.getElementById('importCustomerSelect').value = '__NEW__';
+        document.getElementById('newCustomerGroup').style.display = 'block';
+    }
+}
+
+function toggleNewCustomerInput(val) {
+    const grp = document.getElementById('newCustomerGroup');
+    if (grp) {
+        grp.style.display = val === '__NEW__' ? 'block' : 'none';
+    }
+}
+
+function executeExcelImport(file, customer) {
+    const reader = new FileReader();
+    reader.onload = function (e) {
+        try {
+            const workbook = XLSX.read(e.target.result, { type: 'array' });
+            let totalAdded = 0;
+            let pocsCreated = 0;
+
+            if (workbook.SheetNames.length > 1) {
+                // Multi-sheet: each sheet is a POC
+                workbook.SheetNames.forEach(sheetName => {
+                    const sheet = workbook.Sheets[sheetName];
+                    const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+                    if (rows.length === 0) return;
+
+                    const poc = createOrGetPoc(customer, sheetName.trim());
+                    const colMap = detectColumns(Object.keys(rows[0]));
+                    rows.forEach(row => {
+                        poc.testCases.push(rowToTestCase(row, colMap, poc.testCases.length + 1));
+                        totalAdded++;
+                    });
+                    pocsCreated++;
+                });
+            } else {
+                // Single sheet: check for POC column
+                const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+                if (rows.length === 0) { toast('Excel file is empty!', 'error'); return; }
+
+                const headers = Object.keys(rows[0]);
+                const colMap = detectColumns(headers);
+                const pocCol = detectPocColumn(headers);
+
+                if (pocCol) {
+                    const groups = {};
+                    rows.forEach(row => {
+                        const pocName = String(row[pocCol] || 'Default POC').trim();
+                        if (!groups[pocName]) groups[pocName] = [];
+                        groups[pocName].push(row);
+                    });
+                    Object.entries(groups).forEach(([pocName, groupRows]) => {
+                        const poc = createOrGetPoc(customer, pocName);
+                        groupRows.forEach(row => {
+                            poc.testCases.push(rowToTestCase(row, colMap, poc.testCases.length + 1));
+                            totalAdded++;
+                        });
+                        pocsCreated++;
+                    });
+                } else {
+                    const pocName = file.name.replace(/\.(xlsx|xls|csv)$/i, '').trim() || 'Imported POC';
+                    const poc = createOrGetPoc(customer, pocName);
+                    rows.forEach(row => {
+                        poc.testCases.push(rowToTestCase(row, colMap, poc.testCases.length + 1));
+                        totalAdded++;
+                    });
+                    pocsCreated = 1;
+                }
+            }
+
+            saveData();
+            showCustomer(customer.id);
+            renderSidebar();
+            toast(`Successfully imported ${totalAdded} test cases across ${pocsCreated} POC(s)!`, 'success');
+        } catch (err) {
+            console.error('Import error:', err);
+            toast('Error parsing Excel: ' + err.message, 'error');
+        }
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+// --- Helpers for Excel import ---
+function rowToTestCase(row, colMap, testNo) {
+    return {
+        id: genId(),
+        testNo: testNo,
+        module: String(row[colMap.module] || '').trim(),
+        scenario: String(row[colMap.scenario] || '').trim(),
+        execStep: String(row[colMap.execStep] || '').trim(),
+        expectedBehavior: String(row[colMap.expected] || '').trim(),
+        actualBehavior: String(row[colMap.actual] || '').trim(),
+        comment: String(row[colMap.comment] || '').trim(),
+        status: normalizeStatus(String(row[colMap.status] || 'Not Executed').trim())
+    };
+}
+
+function createOrGetPoc(customer, pocName) {
+    let poc = customer.pocs.find(p => p.name.toLowerCase() === pocName.toLowerCase());
+    if (!poc) {
+        poc = { id: genId(), name: pocName, testCases: [] };
+        customer.pocs.push(poc);
+    }
+    return poc;
+}
+
+function detectPocColumn(headers) {
+    const lower = headers.map(h => h.toLowerCase());
+    const keywords = ['poc', 'proof of concept', 'project', 'poc name', 'poc_name'];
+    for (const kw of keywords) {
+        const idx = lower.findIndex(h => h.includes(kw));
+        if (idx !== -1) return headers[idx];
+    }
+    return null;
+}
+
+function detectColumns(headers) {
+    const lower = headers.map(h => h.toLowerCase());
+    function find(keywords) {
+        for (const kw of keywords) {
+            const idx = lower.findIndex(h => h.includes(kw));
+            if (idx !== -1) return headers[idx];
+        }
+        return null;
+    }
+    return {
+        module:   find(['module', 'component', 'feature', 'area']) || headers[1] || '',
+        scenario: find(['scenario', 'test case', 'testcase', 'description', 'title', 'name']) || headers[2] || '',
+        execStep: find(['exec', 'step', 'procedure', 'action', 'steps']) || headers[3] || '',
+        expected: find(['expected', 'expect']) || headers[4] || '',
+        actual:   find(['actual', 'result', 'observed']) || headers[5] || '',
+        comment:  find(['comment', 'note', 'remark', 'observation']) || headers[6] || '',
+        status:   find(['status', 'verdict', 'outcome', 'pass', 'result']) || headers[7] || ''
+    };
+}
+
+function normalizeStatus(s) {
+    const l = s.toLowerCase();
+    if (l.includes('pass') || l === 'p' || l === 'yes' || l === 'ok') return 'Pass';
+    if (l.includes('fail') || l === 'f' || l === 'no' || l === 'nok') return 'Fail';
+    if (l.includes('block')) return 'Blocked';
+    if (l.includes('progress') || l.includes('wip')) return 'In Progress';
+    return 'Not Executed';
+}
+
+// ============================================================
 // CRUD OPERATIONS
 // ============================================================
 
@@ -492,10 +614,11 @@ function showAddCustomerModal() {
     `, () => {
         const name = document.getElementById('modalInput1').value.trim();
         if (!name) { toast('Please enter a name', 'error'); return false; }
-        db.customers.push({ id: genId(), name, pocs: [] });
+        const newCust = { id: genId(), name, pocs: [] };
+        db.customers.push(newCust);
         saveData();
         renderSidebar();
-        renderDashboard();
+        showCustomer(newCust.id);
         toast(`Customer "${name}" added!`, 'success');
     });
 }
@@ -592,191 +715,7 @@ function deleteTestCase(tcId) {
 }
 
 // ============================================================
-// EXCEL UPLOAD & CONVERSION
-// ============================================================
-
-// --- Upload at CUSTOMER level: creates POCs from sheets or POC column ---
-function handleCustomerExcelUpload(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = function (e) {
-        try {
-            const workbook = XLSX.read(e.target.result, { type: 'array' });
-            const customer = getCustomer(currentCustomerId);
-            if (!customer) return;
-
-            let totalAdded = 0;
-            let pocsCreated = 0;
-
-            if (workbook.SheetNames.length > 1) {
-                // Multi-sheet: each sheet is a POC
-                workbook.SheetNames.forEach(sheetName => {
-                    const sheet = workbook.Sheets[sheetName];
-                    const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-                    if (rows.length === 0) return;
-
-                    const poc = createOrGetPoc(customer, sheetName.trim());
-                    const colMap = detectColumns(Object.keys(rows[0]));
-                    rows.forEach(row => {
-                        poc.testCases.push(rowToTestCase(row, colMap, poc.testCases.length + 1));
-                        totalAdded++;
-                    });
-                    pocsCreated++;
-                });
-            } else {
-                // Single sheet: check for POC column
-                const sheet = workbook.Sheets[workbook.SheetNames[0]];
-                const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-                if (rows.length === 0) { toast('Excel file is empty!', 'error'); return; }
-
-                const headers = Object.keys(rows[0]);
-                const colMap = detectColumns(headers);
-                const pocCol = detectPocColumn(headers);
-
-                if (pocCol) {
-                    const groups = {};
-                    rows.forEach(row => {
-                        const pocName = String(row[pocCol] || 'Default POC').trim();
-                        if (!groups[pocName]) groups[pocName] = [];
-                        groups[pocName].push(row);
-                    });
-                    Object.entries(groups).forEach(([pocName, groupRows]) => {
-                        const poc = createOrGetPoc(customer, pocName);
-                        groupRows.forEach(row => {
-                            poc.testCases.push(rowToTestCase(row, colMap, poc.testCases.length + 1));
-                            totalAdded++;
-                        });
-                        pocsCreated++;
-                    });
-                } else {
-                    const pocName = file.name.replace(/\.(xlsx|xls|csv)$/i, '').trim() || 'Imported POC';
-                    const poc = createOrGetPoc(customer, pocName);
-                    rows.forEach(row => {
-                        poc.testCases.push(rowToTestCase(row, colMap, poc.testCases.length + 1));
-                        totalAdded++;
-                    });
-                    pocsCreated = 1;
-                }
-            }
-
-            saveData();
-            renderPocGrid();
-            renderSidebar();
-            renderDashboard();
-            toast(`Imported ${totalAdded} test cases into ${pocsCreated} POC(s)!`, 'success');
-        } catch (err) {
-            console.error(err);
-            toast('Error reading Excel file: ' + err.message, 'error');
-        }
-    };
-    reader.readAsArrayBuffer(file);
-    event.target.value = '';
-}
-
-// --- Upload at POC level: adds test cases to current POC ---
-function handleExcelUpload(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = function (e) {
-        try {
-            const workbook = XLSX.read(e.target.result, { type: 'array' });
-            const sheetName = workbook.SheetNames[0];
-            const sheet = workbook.Sheets[sheetName];
-            const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-
-            if (rows.length === 0) { toast('Excel file is empty!', 'error'); return; }
-
-            const poc = getPoc(currentCustomerId, currentPocId);
-            if (!poc) return;
-
-            const colMap = detectColumns(Object.keys(rows[0]));
-            let added = 0;
-            rows.forEach(row => {
-                poc.testCases.push(rowToTestCase(row, colMap, poc.testCases.length + 1));
-                added++;
-            });
-
-            saveData();
-            renderTestCases();
-            populateModuleFilter();
-            renderSidebar();
-            toast(`Imported ${added} test cases from Excel!`, 'success');
-        } catch (err) {
-            console.error(err);
-            toast('Error reading Excel file: ' + err.message, 'error');
-        }
-    };
-    reader.readAsArrayBuffer(file);
-    event.target.value = '';
-}
-
-// --- Helpers for Excel import ---
-function rowToTestCase(row, colMap, testNo) {
-    return {
-        id: genId(),
-        testNo: testNo,
-        module: String(row[colMap.module] || '').trim(),
-        scenario: String(row[colMap.scenario] || '').trim(),
-        execStep: String(row[colMap.execStep] || '').trim(),
-        expectedBehavior: String(row[colMap.expected] || '').trim(),
-        actualBehavior: String(row[colMap.actual] || '').trim(),
-        comment: String(row[colMap.comment] || '').trim(),
-        status: normalizeStatus(String(row[colMap.status] || 'Not Executed').trim())
-    };
-}
-
-function createOrGetPoc(customer, pocName) {
-    let poc = customer.pocs.find(p => p.name.toLowerCase() === pocName.toLowerCase());
-    if (!poc) {
-        poc = { id: genId(), name: pocName, testCases: [] };
-        customer.pocs.push(poc);
-    }
-    return poc;
-}
-
-function detectPocColumn(headers) {
-    const lower = headers.map(h => h.toLowerCase());
-    const keywords = ['poc', 'proof of concept', 'project', 'poc name', 'poc_name'];
-    for (const kw of keywords) {
-        const idx = lower.findIndex(h => h.includes(kw));
-        if (idx !== -1) return headers[idx];
-    }
-    return null;
-}
-
-function detectColumns(headers) {
-    const lower = headers.map(h => h.toLowerCase());
-    function find(keywords) {
-        for (const kw of keywords) {
-            const idx = lower.findIndex(h => h.includes(kw));
-            if (idx !== -1) return headers[idx];
-        }
-        return null;
-    }
-    return {
-        module:   find(['module', 'component', 'feature', 'area']) || headers[1] || '',
-        scenario: find(['scenario', 'test case', 'testcase', 'description', 'title', 'name']) || headers[2] || '',
-        execStep: find(['exec', 'step', 'procedure', 'action', 'steps']) || headers[3] || '',
-        expected: find(['expected', 'expect']) || headers[4] || '',
-        actual:   find(['actual', 'result', 'observed']) || headers[5] || '',
-        comment:  find(['comment', 'note', 'remark', 'observation']) || headers[6] || '',
-        status:   find(['status', 'verdict', 'outcome', 'pass', 'result']) || headers[7] || ''
-    };
-}
-
-function normalizeStatus(s) {
-    const l = s.toLowerCase();
-    if (l.includes('pass') || l === 'p' || l === 'yes' || l === 'ok') return 'Pass';
-    if (l.includes('fail') || l === 'f' || l === 'no' || l === 'nok') return 'Fail';
-    if (l.includes('block')) return 'Blocked';
-    if (l.includes('progress') || l.includes('wip')) return 'In Progress';
-    return 'Not Executed';
-}
-
-// ============================================================
-// EXCEL EXPORT
+// EXCEL EXPORT (Always accessible on execution page)
 // ============================================================
 function exportPocToExcel() {
     const poc = getPoc(currentCustomerId, currentPocId);
@@ -801,8 +740,8 @@ function exportPocToExcel() {
     ];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, poc.name.slice(0, 31));
-    XLSX.writeFile(wb, `${customer.name}_${poc.name}_TestCases.xlsx`);
-    toast('Excel exported!', 'success');
+    XLSX.writeFile(wb, `${customer.name}_${poc.name}_TestResults.xlsx`);
+    toast('Excel exported successfully!', 'success');
 }
 
 // ============================================================
@@ -817,7 +756,7 @@ function exportAllDataJSON() {
     a.download = `poc-tracker-backup-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    toast('Backup downloaded!', 'success');
+    toast('JSON backup downloaded!', 'success');
 }
 
 function importAllDataJSON(event) {
@@ -854,7 +793,7 @@ function openModal(title, bodyHtml, onSave) {
     document.getElementById('modalOverlay').classList.add('active');
     modalCallback = onSave;
     setTimeout(() => {
-        const firstInput = document.querySelector('#modalBody input, #modalBody textarea');
+        const firstInput = document.querySelector('#modalBody input, #modalBody select, #modalBody textarea');
         if (firstInput) firstInput.focus();
     }, 100);
 }
