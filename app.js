@@ -1,33 +1,218 @@
 // ============================================================
-// POC Test Tracker — Full Application Logic
+// POC Test Tracker — Firebase Cloud Version
 // ============================================================
+
+// =============================================
+// 🔥 FIREBASE CONFIG — PASTE YOUR CONFIG HERE
+// =============================================
+const firebaseConfig = {
+    apiKey: "AIzaSyBYhQsnq3fLPlLjYNNHuftuZDd3BUAwOYg",
+    authDomain: "poc-tracker-46580.firebaseapp.com",
+    projectId: "poc-tracker-46580",
+    storageBucket: "poc-tracker-46580.firebasestorage.app",
+    messagingSenderId: "568469845077",
+    appId: "1:568469845077:web:f80225c4a1bd6e640a10dc",
+    measurementId: "G-HM82QL40RG"
+};
+
+// ---------- Firebase Init ----------
+firebase.initializeApp(firebaseConfig);
+const firestore = firebase.firestore();
+const DB_DOC = firestore.collection('pocTracker').doc('mainData');
 
 // ---------- State ----------
 let db = { customers: [] };
 let currentCustomerId = null;
 let currentPocId = null;
 let modalCallback = null;
+let isLoading = true;
 
 // ---------- Init ----------
 document.addEventListener('DOMContentLoaded', () => {
-    loadData();
-    renderSidebar();
-    renderDashboard();
+    showLoadingState();
+    loadDataFromCloud();
 });
 
+function showLoadingState() {
+    const main = document.getElementById('mainContent');
+    main.innerHTML = `
+        <div class="welcome">
+            <i class="fas fa-spinner fa-spin welcome-icon" style="font-size:48px;color:var(--primary)"></i>
+            <h2>Connecting to database...</h2>
+            <p>Loading your test cases from the cloud</p>
+        </div>`;
+}
+
 // ============================================================
-// DATA PERSISTENCE (localStorage)
+// DATA PERSISTENCE (Firebase Firestore)
 // ============================================================
-function loadData() {
-    const stored = localStorage.getItem('pocTestTracker');
-    if (stored) {
-        try { db = JSON.parse(stored); } catch (e) { db = { customers: [] }; }
-    }
-    if (!db.customers) db.customers = [];
+function loadDataFromCloud() {
+    // Real-time listener: auto-syncs when anyone makes changes
+    DB_DOC.onSnapshot((doc) => {
+        if (doc.exists) {
+            db = doc.data();
+            if (!db.customers) db.customers = [];
+        } else {
+            db = { customers: [] };
+            // Create the document if it doesn't exist
+            DB_DOC.set(db);
+        }
+        isLoading = false;
+        refreshCurrentView();
+    }, (error) => {
+        console.error('Firebase error:', error);
+        toast('Cloud connection failed. Using local backup.', 'error');
+        // Fallback to localStorage
+        const stored = localStorage.getItem('pocTestTracker');
+        if (stored) {
+            try { db = JSON.parse(stored); } catch (e) { db = { customers: [] }; }
+        }
+        isLoading = false;
+        refreshCurrentView();
+    });
 }
 
 function saveData() {
+    // Save to cloud
+    DB_DOC.set(JSON.parse(JSON.stringify(db))).catch(err => {
+        console.error('Save error:', err);
+        toast('Error saving to cloud!', 'error');
+    });
+    // Also backup locally
     localStorage.setItem('pocTestTracker', JSON.stringify(db));
+}
+
+function refreshCurrentView() {
+    // Restore the main content structure if it was replaced by loading
+    const main = document.getElementById('mainContent');
+    if (!main.querySelector('#dashboardView')) {
+        main.innerHTML = `
+            <!-- Dashboard (default view) -->
+            <div id="dashboardView" class="view active">
+                <div class="welcome">
+                    <i class="fas fa-chart-line welcome-icon"></i>
+                    <h2>Welcome to POC Test Tracker</h2>
+                    <p>Select a customer from the sidebar or add a new one to get started.</p>
+                    <div class="stats-grid" id="dashboardStats"></div>
+                </div>
+            </div>
+            <!-- Customer View -->
+            <div id="customerView" class="view">
+                <div class="view-header">
+                    <div>
+                        <button class="btn btn-ghost btn-sm" onclick="showDashboard()">
+                            <i class="fas fa-arrow-left"></i> Back
+                        </button>
+                        <h2 id="customerTitle" class="inline-title"></h2>
+                    </div>
+                    <div class="view-actions">
+                        <label class="btn btn-success">
+                            <i class="fas fa-file-excel"></i> Upload Excel
+                            <input type="file" accept=".xlsx,.xls,.csv" onchange="handleCustomerExcelUpload(event)" hidden>
+                        </label>
+                        <button class="btn btn-primary" onclick="showAddPocModal()">
+                            <i class="fas fa-plus"></i> Add POC
+                        </button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteCurrentCustomer()">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="poc-grid" id="pocGrid"></div>
+            </div>
+            <!-- POC / Test Cases View -->
+            <div id="pocView" class="view">
+                <div class="view-header">
+                    <div>
+                        <button class="btn btn-ghost btn-sm" onclick="showCustomer(currentCustomerId)">
+                            <i class="fas fa-arrow-left"></i> Back
+                        </button>
+                        <h2 id="pocTitle" class="inline-title"></h2>
+                        <span class="badge" id="pocBadge"></span>
+                    </div>
+                    <div class="view-actions">
+                        <label class="btn btn-success">
+                            <i class="fas fa-file-excel"></i> Upload Excel
+                            <input type="file" accept=".xlsx,.xls,.csv" onchange="handleExcelUpload(event)" hidden>
+                        </label>
+                        <button class="btn btn-outline" onclick="exportPocToExcel()">
+                            <i class="fas fa-download"></i> Export Excel
+                        </button>
+                        <button class="btn btn-primary" onclick="showAddTestCaseModal()">
+                            <i class="fas fa-plus"></i> Add Test Case
+                        </button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteCurrentPoc()">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="filters-bar">
+                    <div class="filter-group">
+                        <label>Filter by Status:</label>
+                        <select id="statusFilter" onchange="renderTestCases()">
+                            <option value="all">All</option>
+                            <option value="Pass">Pass</option>
+                            <option value="Fail">Fail</option>
+                            <option value="Blocked">Blocked</option>
+                            <option value="In Progress">In Progress</option>
+                            <option value="Not Executed">Not Executed</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>Filter by Module:</label>
+                        <select id="moduleFilter" onchange="renderTestCases()">
+                            <option value="all">All</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <input type="text" id="searchInput" placeholder="Search test cases..." oninput="renderTestCases()">
+                    </div>
+                    <div class="stats-mini" id="pocStats"></div>
+                </div>
+                <div class="table-container">
+                    <table class="test-table" id="testCaseTable">
+                        <thead>
+                            <tr>
+                                <th class="col-no">#</th>
+                                <th class="col-module">Module</th>
+                                <th class="col-scenario">Scenario</th>
+                                <th class="col-step">Execution Step</th>
+                                <th class="col-expected">Expected Behavior</th>
+                                <th class="col-actual">Actual Behavior</th>
+                                <th class="col-comment">Comment</th>
+                                <th class="col-status">Status</th>
+                                <th class="col-actions">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="testCaseBody"></tbody>
+                    </table>
+                    <div class="empty-state" id="emptyTestCases" style="display:none;">
+                        <i class="fas fa-clipboard-list"></i>
+                        <p>No test cases yet. Add manually or upload an Excel file.</p>
+                    </div>
+                </div>
+            </div>`;
+    }
+
+    renderSidebar();
+    // Re-render the current view
+    if (currentPocId && currentCustomerId) {
+        const poc = getPoc(currentCustomerId, currentPocId);
+        if (poc) {
+            showPoc(currentCustomerId, currentPocId);
+        } else {
+            showCustomer(currentCustomerId);
+        }
+    } else if (currentCustomerId) {
+        const customer = getCustomer(currentCustomerId);
+        if (customer) {
+            showCustomer(currentCustomerId);
+        } else {
+            showDashboard();
+        }
+    } else {
+        showDashboard();
+    }
 }
 
 // ============================================================
@@ -35,7 +220,8 @@ function saveData() {
 // ============================================================
 function showView(viewId) {
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-    document.getElementById(viewId).classList.add('active');
+    const el = document.getElementById(viewId);
+    if (el) el.classList.add('active');
 }
 
 function showDashboard() {
@@ -131,13 +317,16 @@ function renderDashboard() {
             });
         });
     });
-    document.getElementById('dashboardStats').innerHTML = `
-        <div class="stat-card"><div class="stat-number">${totalCustomers}</div><div class="stat-label">Customers</div></div>
-        <div class="stat-card"><div class="stat-number">${totalPocs}</div><div class="stat-label">POCs</div></div>
-        <div class="stat-card"><div class="stat-number">${totalTCs}</div><div class="stat-label">Test Cases</div></div>
-        <div class="stat-card"><div class="stat-number" style="color:var(--success)">${totalPass}</div><div class="stat-label">Passed</div></div>
-        <div class="stat-card"><div class="stat-number" style="color:var(--danger)">${totalFail}</div><div class="stat-label">Failed</div></div>
-    `;
+    const statsEl = document.getElementById('dashboardStats');
+    if (statsEl) {
+        statsEl.innerHTML = `
+            <div class="stat-card"><div class="stat-number">${totalCustomers}</div><div class="stat-label">Customers</div></div>
+            <div class="stat-card"><div class="stat-number">${totalPocs}</div><div class="stat-label">POCs</div></div>
+            <div class="stat-card"><div class="stat-number">${totalTCs}</div><div class="stat-label">Test Cases</div></div>
+            <div class="stat-card"><div class="stat-number" style="color:var(--success)">${totalPass}</div><div class="stat-label">Passed</div></div>
+            <div class="stat-card"><div class="stat-number" style="color:var(--danger)">${totalFail}</div><div class="stat-label">Failed</div></div>
+        `;
+    }
 }
 
 // ============================================================
@@ -147,7 +336,7 @@ function renderPocGrid() {
     const customer = getCustomer(currentCustomerId);
     const grid = document.getElementById('pocGrid');
     if (!customer || customer.pocs.length === 0) {
-        grid.innerHTML = `<div class="empty-state"><i class="fas fa-folder-open"></i><p>No POCs yet. Click "Add POC" to create one.</p></div>`;
+        grid.innerHTML = `<div class="empty-state"><i class="fas fa-folder-open"></i><p>No POCs yet. Click "Add POC" or "Upload Excel" to create one.</p></div>`;
         return;
     }
     grid.innerHTML = customer.pocs.map(poc => {
@@ -179,9 +368,9 @@ function renderTestCases() {
     const poc = getPoc(currentCustomerId, currentPocId);
     if (!poc) return;
 
-    const statusFilter = document.getElementById('statusFilter').value;
-    const moduleFilter = document.getElementById('moduleFilter').value;
-    const search = document.getElementById('searchInput').value.toLowerCase();
+    const statusFilter = document.getElementById('statusFilter')?.value || 'all';
+    const moduleFilter = document.getElementById('moduleFilter')?.value || 'all';
+    const search = (document.getElementById('searchInput')?.value || '').toLowerCase();
 
     let filtered = poc.testCases.filter(tc => {
         if (statusFilter !== 'all' && tc.status !== statusFilter) return false;
@@ -195,15 +384,16 @@ function renderTestCases() {
 
     const tbody = document.getElementById('testCaseBody');
     const emptyMsg = document.getElementById('emptyTestCases');
+    const table = document.querySelector('.test-table');
 
     if (filtered.length === 0) {
         tbody.innerHTML = '';
         emptyMsg.style.display = 'block';
-        document.querySelector('.test-table').style.display = 'none';
+        table.style.display = 'none';
     } else {
         emptyMsg.style.display = 'none';
-        document.querySelector('.test-table').style.display = 'table';
-        tbody.innerHTML = filtered.map((tc, idx) => {
+        table.style.display = 'table';
+        tbody.innerHTML = filtered.map((tc) => {
             const statusClass = 'status-' + tc.status.toLowerCase().replace(/\s+/g, '-');
             return `
             <tr data-id="${tc.id}">
@@ -234,20 +424,27 @@ function renderTestCases() {
 
     // Update stats
     const allStats = getTestCaseStats(poc.testCases);
-    document.getElementById('pocStats').innerHTML = `
-        <span class="badge badge-pass">${allStats.Pass} Pass</span>
-        <span class="badge badge-fail">${allStats.Fail} Fail</span>
-        <span class="badge" style="background:var(--blocked-bg);color:var(--blocked)">${allStats.Blocked} Blocked</span>
-        <span class="badge badge-info">${allStats['In Progress']} In Prog</span>
-        <span class="badge badge-gray">${allStats['Not Executed']} Pending</span>
-    `;
-    document.getElementById('pocBadge').textContent = `${allStats.total} test cases`;
-    document.getElementById('pocBadge').className = 'badge badge-info';
+    const pocStatsEl = document.getElementById('pocStats');
+    if (pocStatsEl) {
+        pocStatsEl.innerHTML = `
+            <span class="badge badge-pass">${allStats.Pass} Pass</span>
+            <span class="badge badge-fail">${allStats.Fail} Fail</span>
+            <span class="badge" style="background:var(--blocked-bg);color:var(--blocked)">${allStats.Blocked} Blocked</span>
+            <span class="badge badge-info">${allStats['In Progress']} In Prog</span>
+            <span class="badge badge-gray">${allStats['Not Executed']} Pending</span>
+        `;
+    }
+    const pocBadge = document.getElementById('pocBadge');
+    if (pocBadge) {
+        pocBadge.textContent = `${allStats.total} test cases`;
+        pocBadge.className = 'badge badge-info';
+    }
 }
 
 function populateModuleFilter() {
     const poc = getPoc(currentCustomerId, currentPocId);
     const select = document.getElementById('moduleFilter');
+    if (!select) return;
     const modules = [...new Set((poc?.testCases || []).map(tc => tc.module).filter(Boolean))];
     select.innerHTML = '<option value="all">All</option>' + modules.map(m => `<option value="${escHtml(m)}">${escHtml(m)}</option>`).join('');
 }
@@ -262,7 +459,7 @@ function onCellEdit(el) {
     const poc = getPoc(currentCustomerId, currentPocId);
     if (!poc) return;
     const tc = poc.testCases.find(t => t.id === tcId);
-    if (tc) {
+    if (tc && tc[field] !== value) {
         tc[field] = value;
         saveData();
     }
@@ -388,7 +585,6 @@ function deleteTestCase(tcId) {
     const poc = getPoc(currentCustomerId, currentPocId);
     if (!poc) return;
     poc.testCases = poc.testCases.filter(t => t.id !== tcId);
-    // Re-number
     poc.testCases.forEach((tc, i) => tc.testNo = i + 1);
     saveData();
     renderTestCases();
@@ -413,10 +609,8 @@ function handleCustomerExcelUpload(event) {
             let totalAdded = 0;
             let pocsCreated = 0;
 
-            // Strategy: If multiple sheets, each sheet = one POC
-            // If single sheet, check for a POC column to group by
             if (workbook.SheetNames.length > 1) {
-                // --- Multi-sheet: each sheet is a POC ---
+                // Multi-sheet: each sheet is a POC
                 workbook.SheetNames.forEach(sheetName => {
                     const sheet = workbook.Sheets[sheetName];
                     const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
@@ -431,7 +625,7 @@ function handleCustomerExcelUpload(event) {
                     pocsCreated++;
                 });
             } else {
-                // --- Single sheet: check for POC column ---
+                // Single sheet: check for POC column
                 const sheet = workbook.Sheets[workbook.SheetNames[0]];
                 const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
                 if (rows.length === 0) { toast('Excel file is empty!', 'error'); return; }
@@ -441,7 +635,6 @@ function handleCustomerExcelUpload(event) {
                 const pocCol = detectPocColumn(headers);
 
                 if (pocCol) {
-                    // Group rows by POC column value
                     const groups = {};
                     rows.forEach(row => {
                         const pocName = String(row[pocCol] || 'Default POC').trim();
@@ -457,7 +650,6 @@ function handleCustomerExcelUpload(event) {
                         pocsCreated++;
                     });
                 } else {
-                    // No POC column — use filename as POC name
                     const pocName = file.name.replace(/\.(xlsx|xls|csv)$/i, '').trim() || 'Imported POC';
                     const poc = createOrGetPoc(customer, pocName);
                     rows.forEach(row => {
@@ -494,16 +686,12 @@ function handleExcelUpload(event) {
             const sheet = workbook.Sheets[sheetName];
             const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
 
-            if (rows.length === 0) {
-                toast('Excel file is empty!', 'error');
-                return;
-            }
+            if (rows.length === 0) { toast('Excel file is empty!', 'error'); return; }
 
             const poc = getPoc(currentCustomerId, currentPocId);
             if (!poc) return;
 
             const colMap = detectColumns(Object.keys(rows[0]));
-
             let added = 0;
             rows.forEach(row => {
                 poc.testCases.push(rowToTestCase(row, colMap, poc.testCases.length + 1));
@@ -607,7 +795,6 @@ function exportPocToExcel() {
     }));
 
     const ws = XLSX.utils.json_to_sheet(data);
-    // Set column widths
     ws['!cols'] = [
         { wch: 8 }, { wch: 15 }, { wch: 30 }, { wch: 35 },
         { wch: 30 }, { wch: 30 }, { wch: 20 }, { wch: 14 }
@@ -666,7 +853,6 @@ function openModal(title, bodyHtml, onSave) {
     document.getElementById('modalBody').innerHTML = bodyHtml;
     document.getElementById('modalOverlay').classList.add('active');
     modalCallback = onSave;
-    // Focus first input
     setTimeout(() => {
         const firstInput = document.querySelector('#modalBody input, #modalBody textarea');
         if (firstInput) firstInput.focus();
@@ -685,7 +871,6 @@ function modalSave() {
     }
 }
 
-// Handle Enter key in modal
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey && document.getElementById('modalOverlay').classList.contains('active')) {
         const active = document.activeElement;
