@@ -92,15 +92,29 @@ function submitAccessCode() {
     const input = document.getElementById('manualAccessCodeInput');
     if (!input || !input.value.trim()) return;
     const code = input.value.trim();
-    const found = db.customers.find(c => c.accessKey === code || c.id === code);
+
+    // 1. Check if user entered Admin Password
+    if (code === 'Pa$$word') {
+        isAdmin = true;
+        sessionStorage.setItem('isAdmin', 'true');
+        input.value = '';
+        updateAdminUI();
+        refreshCurrentView();
+        toast('Admin access granted! All customers unlocked.', 'success');
+        return;
+    }
+
+    // 2. Check if user entered Customer Access Code
+    const found = db.customers.find(c => c.accessKey === code || c.id === code || (c.name && c.name.toLowerCase() === code.toLowerCase()));
     if (found) {
         activeCustomerKey = found.accessKey;
         const newUrl = window.location.pathname + '?c=' + found.accessKey;
         window.history.pushState({}, '', newUrl);
+        input.value = '';
         refreshCurrentView();
         toast(`Welcome, ${found.name}!`, 'success');
     } else {
-        toast('Invalid access code. Please check and try again.', 'error');
+        toast('Invalid code or password. Please try again.', 'error');
     }
 }
 

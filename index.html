@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>POC Test Tracker</title>
-    <link rel="stylesheet" href="style.css?v=3">
+    <link rel="stylesheet" href="style.css?v=4">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <!-- Firebase SDK -->
@@ -71,10 +71,10 @@
                     <h2>POC Test Portal</h2>
                     <p>Welcome! Please use your company's dedicated POC access link to review test cases.</p>
                     <div style="margin-top: 24px; background: white; padding: 24px; border-radius: 12px; box-shadow: var(--shadow); border: 1px solid var(--gray-200);">
-                        <p style="font-size: 13px; font-weight: 500; color: var(--gray-600); margin-bottom: 10px;">Have a Customer Access Code?</p>
+                        <p style="font-size: 13px; font-weight: 500; color: var(--gray-600); margin-bottom: 10px;">Enter Customer Access Code or Admin Password:</p>
                         <div style="display: flex; gap: 8px;">
-                            <input type="text" id="manualAccessCodeInput" placeholder="e.g. acme_123" style="flex: 1; padding: 10px 14px; border: 1px solid var(--gray-300); border-radius: 6px; font-size: 14px;" onkeypress="if(event.key==='Enter') submitAccessCode()">
-                            <button class="btn btn-primary" onclick="submitAccessCode()">Open Portal</button>
+                            <input type="password" id="manualAccessCodeInput" placeholder="••••••••" style="flex: 1; padding: 10px 14px; border: 1px solid var(--gray-300); border-radius: 6px; font-size: 14px;" onkeypress="if(event.key==='Enter') submitAccessCode()">
+                            <button class="btn btn-primary" onclick="submitAccessCode()">Enter</button>
                         </div>
                     </div>
                 </div>
@@ -230,6 +230,6 @@
     <!-- Toast Notification -->
     <div class="toast-container" id="toastContainer"></div>
 
-    <script src="app.js?v=3"></script>
+    <script src="app.js?v=4"></script>
 </body>
 </html>
